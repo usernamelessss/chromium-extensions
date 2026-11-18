@@ -1,0 +1,179 @@
+name: Build CRX
+
+# 总仓库里放多个扩展，每个扩展一个文件夹。
+# 发布方式：
+#   1. 推送「扩展目录名-v版本号」格式的标签，如 session-mover-v1.1.0，自动打包并发布 Release
+#   2. 在 Actions 页面手动运行，填写扩展目录名
+on:
+  push:
+    tags: ['*-v*']
+  workflow_dispatch:
+    inputs:
+      extend_name:
+        description: '扩展目录名（仓库根目录下的文件夹名）'
+        required: true
+        type: string
+      manifest_dir:
+        description: 'manifest.json 所在目录（相对扩展目录，如 src），留空自动查找'
+        required: false
+        type: string
+        default: ""
+      release:
+        description: '同时发布到 Releases（标签为 扩展目录名-v版本号）'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 创建 Release 需要写权限
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve extension
+        id: resolve
+        env:
+          INPUT_NAME: ${{ inputs.extend_name }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            # session-mover-v1.1.0 → 目录 session-mover，版本 1.1.0
+            TAG="$GITHUB_REF_NAME"
+            EXT_NAME="${TAG%-v*}"
+            TAG_VERSION="${TAG##*-v}"
+          else
+            EXT_NAME="$INPUT_NAME"
+            TAG_VERSION=""
+          fi
+
+          if [ -z "$EXT_NAME" ] || [ ! -d "$EXT_NAME" ]; then
+            echo "::error::仓库根目录下找不到扩展文件夹：${EXT_NAME:-（空）}。标签格式应为「扩展目录名-v版本号」"
+            exit 1
+          fi
+          if [ -z "$(ls -A "$EXT_NAME")" ]; then
+            echo "::error::文件夹 $EXT_NAME 是空的。它可能带着自己的 .git（GitHub 上显示为点不开的文件夹），删掉里面的 .git 后重新提交"
+            exit 1
+          fi
+
+          # 私钥 Secret 名：CRX_KEY_ + 目录名大写，非字母数字换成下划线
+          SECRET_NAME="CRX_KEY_$(echo "$EXT_NAME" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g')"
+
+          echo "ext_name=$EXT_NAME" >> "$GITHUB_OUTPUT"
+          echo "tag_version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+          echo "secret_name=$SECRET_NAME" >> "$GITHUB_OUTPUT"
+          echo "扩展：$EXT_NAME，私钥 Secret：$SECRET_NAME"
+
+      - name: Locate manifest.json
+        id: locate
+        env:
+          EXT_NAME: ${{ steps.resolve.outputs.ext_name }}
+          INPUT_MANIFEST_DIR: ${{ inputs.manifest_dir }}
+        run: |
+          # 是否是有效的扩展 manifest（必须有 manifest_version 字段）
+          is_ext_manifest() { [ -f "$1" ] && jq -e '.manifest_version' "$1" >/dev/null 2>&1; }
+
+          MANIFEST=""
+          if [ -n "$INPUT_MANIFEST_DIR" ]; then
+            # 手动指定了目录
+            MANIFEST="$EXT_NAME/$INPUT_MANIFEST_DIR/manifest.json"
+            is_ext_manifest "$MANIFEST" || { echo "::error::$MANIFEST 不存在或不是扩展的 manifest"; exit 1; }
+          else
+            # 先查常见位置
+            for p in "$EXT_NAME/manifest.json" "$EXT_NAME/src/manifest.json" "$EXT_NAME/extension/manifest.json" \
+                     "$EXT_NAME/addon/manifest.json" "$EXT_NAME/app/manifest.json" "$EXT_NAME/dist/manifest.json"; do
+              if is_ext_manifest "$p"; then MANIFEST="$p"; break; fi
+            done
+            # 再按目录深度由浅到深搜索
+            if [ -z "$MANIFEST" ]; then
+              while read -r _ p; do
+                if is_ext_manifest "$p"; then MANIFEST="$p"; break; fi
+              done < <(find "$EXT_NAME" -maxdepth 4 -name manifest.json \
+                         -not -path '*/node_modules/*' -not -path '*/.git/*' \
+                         -printf '%d %p\n' | sort -n)
+            fi
+          fi
+
+          if [ -z "$MANIFEST" ]; then
+            echo "$EXT_NAME 的目录结构（前 3 层）："
+            find "$EXT_NAME" -maxdepth 3 -not -path '*/.git/*' | head -n 100
+            echo "::error::在 $EXT_NAME 下没有找到扩展的 manifest.json，请查看上面的目录结构，或手动填写 manifest_dir"
+            exit 1
+          fi
+
+          echo "找到 manifest：$MANIFEST"
+          echo "src_dir=$(dirname "$MANIFEST")" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare build directory
+        id: prep
+        env:
+          EXT_NAME: ${{ steps.resolve.outputs.ext_name }}
+          TAG_VERSION: ${{ steps.resolve.outputs.tag_version }}
+          SRC_DIR: ${{ steps.locate.outputs.src_dir }}
+        run: |
+          # 复制到临时目录，排除和扩展运行无关的文件
+          # 开头带 / 的只排除扩展根目录下的同名文件，子目录里的不受影响
+          BUILD_DIR="$RUNNER_TEMP/ext"
+          rm -rf "$BUILD_DIR" && mkdir -p "$BUILD_DIR"
+          rsync -a "$SRC_DIR/" "$BUILD_DIR/" \
+            --exclude '.git' --exclude '.github' --exclude 'node_modules' \
+            --exclude '*.pem' --exclude '*.crx' --exclude '*.zip' \
+            --exclude '/README*' --exclude '/CHANGELOG*' --exclude '/ChangeLog*' --exclude '/LICENSE*' \
+            --exclude '/.gitignore' --exclude '/.idea' --exclude '/.vscode'
+
+          VERSION=$(jq -r '.version' "$BUILD_DIR/manifest.json")
+          if [ -n "$TAG_VERSION" ] && [ "$TAG_VERSION" != "$VERSION" ]; then
+            echo "::error::标签里的版本 $TAG_VERSION 和 manifest.json 里的版本 $VERSION 不一致，请先修改 manifest.json"
+            exit 1
+          fi
+
+          FILE="${EXT_NAME}_${VERSION}"
+          echo "build_dir=$BUILD_DIR" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "打包 $EXT_NAME $VERSION"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Pack CRX
+        env:
+          # 优先用这个扩展自己的私钥，没有就用通用的 CRX_PRIVATE_KEY
+          EXT_KEY: ${{ secrets[steps.resolve.outputs.secret_name] }}
+          FALLBACK_KEY: ${{ secrets.CRX_PRIVATE_KEY }}
+          SECRET_NAME: ${{ steps.resolve.outputs.secret_name }}
+          BUILD_DIR: ${{ steps.prep.outputs.build_dir }}
+          FILE: ${{ steps.prep.outputs.file }}
+        run: |
+          KEY_CONTENT="${EXT_KEY:-$FALLBACK_KEY}"
+          if [ -z "$KEY_CONTENT" ]; then
+            echo "::error::没有找到私钥。请在仓库 Settings → Secrets and variables → Actions 里添加 $SECRET_NAME"
+            exit 1
+          fi
+          [ -z "$EXT_KEY" ] && echo "::warning::没有找到 $SECRET_NAME，使用了通用私钥 CRX_PRIVATE_KEY"
+
+          # 私钥只写到临时目录，用完删除
+          KEY="$RUNNER_TEMP/key.pem"
+          printf '%s\n' "$KEY_CONTENT" > "$KEY"
+          mkdir -p dist
+          npx --yes crx3 -p "$KEY" -o "dist/$FILE.crx" -z "dist/$FILE.zip" "$BUILD_DIR"
+          rm -f "$KEY"
+          ls -l dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.prep.outputs.file }}
+          path: dist/*
+
+      - name: Publish release
+        if: github.ref_type == 'tag' || inputs.release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve.outputs.ext_name }}-v${{ steps.prep.outputs.version }}
+          name: ${{ steps.resolve.outputs.ext_name }} ${{ steps.prep.outputs.version }}
+          files: dist/*

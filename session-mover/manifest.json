@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "登录态搬家",
+  "version": "1.1.0",
+  "description": "保存网站的 Cookie 和 localStorage，导出为加密文件，在另一台电脑恢复登录状态；同一网站多账号一键切换。",
+  "minimum_chrome_version": "110",
+  "permissions": ["cookies", "storage", "unlimitedStorage", "scripting", "tabs", "favicon"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "登录态搬家"
+  },
+  "options_page": "manage.html"
+}

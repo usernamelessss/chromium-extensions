@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>登录态搬家 - 管理</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="manage">
+  <main>
+    <h1>
+      <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true">
+        <defs>
+          <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#2fb594"/><stop offset="1" stop-color="#0e7c66"/>
+          </linearGradient>
+        </defs>
+        <rect width="32" height="32" rx="7" fill="url(#g)"/>
+        <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8.3 11.8h15.4M19.5 7.6l4.2 4.2-4.2 4.2"/>
+          <path d="M23.7 20.2H8.3M12.5 16l-4.2 4.2 4.2 4.2"/>
+        </g>
+      </svg>
+      登录态搬家
+    </h1>
+    <p class="muted">在这台电脑导出加密文件，到另一台电脑导入，再打开对应网站点「切换」。备份文件里有你的登录凭证，请设置足够长的密码并妥善保管。</p>
+
+    <h2>导出</h2>
+    <div class="panel">
+      <div class="grid">
+        <input type="password" id="pwd1" placeholder="设置密码（至少 8 位）" autocomplete="new-password">
+        <input type="password" id="pwd2" placeholder="再输入一次" autocomplete="new-password">
+        <button class="primary" id="export">导出全部</button>
+      </div>
+      <div class="status" id="export-status"></div>
+    </div>
+
+    <h2>导入</h2>
+    <div class="panel">
+      <div class="grid">
+        <input type="file" id="file" accept=".json,application/json">
+        <input type="password" id="pwd-in" placeholder="导出时设置的密码" autocomplete="off">
+        <button class="primary" id="import">导入</button>
+      </div>
+      <div class="muted" style="margin-top: 8px;">同一个账号如果两边都有，保留保存时间较新的那份。</div>
+      <div class="status" id="import-status"></div>
+    </div>
+
+    <h2>已保存的账号 <span class="count" id="total">0</span></h2>
+    <div id="groups"></div>
+
+    <p class="muted" style="margin-top: 32px;"><a href="icons.html" style="color: var(--accent);">生成扩展图标 PNG</a></p>
+  </main>
+
+  <script type="module" src="manage.js"></script>
+</body>
+</html>

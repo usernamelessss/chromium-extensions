@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="popup">
+  <header>
+    <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#fff" fill-opacity=".18"/>
+      <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8.3 11.8h15.4M19.5 7.6l4.2 4.2-4.2 4.2"/>
+        <path d="M23.7 20.2H8.3M12.5 16l-4.2 4.2 4.2 4.2"/>
+      </g>
+    </svg>
+    <h1>登录态搬家</h1>
+    <button id="open-manage">管理 / 导入导出</button>
+  </header>
+
+  <div class="body">
+    <div class="card">
+      <div class="card-title">当前网站 <span class="muted" style="font-weight: 400;">包含所有子域名</span></div>
+      <label class="site">
+        <img id="favicon" alt="">
+        <input type="text" id="domain" spellcheck="false">
+      </label>
+      <div class="row" style="margin-top: 10px;">
+        <input type="text" id="name" placeholder="起个名字，如：工作号">
+        <button class="primary" id="save">保存当前登录</button>
+      </div>
+      <div class="hint">
+        <span class="muted">要登录另一个账号？先保存，再清空，别点网站的「退出」</span>
+        <button class="small" id="clear">清空</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span>已保存的账号 <span class="count" id="count">0</span></span>
+        <button class="small ghost" id="undo" hidden>↶ 撤销上次操作</button>
+      </div>
+      <div id="list"></div>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
